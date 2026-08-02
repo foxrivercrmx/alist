@@ -46,6 +46,7 @@ import (
 	_ "github.com/alist-org/alist/v3/drivers/guangyapan"
 	_ "github.com/alist-org/alist/v3/drivers/halalcloud"
 	_ "github.com/alist-org/alist/v3/drivers/ilanzou"
+	_ "github.com/alist-org/alist/v3/drivers/internet_archive"
 	_ "github.com/alist-org/alist/v3/drivers/ipfs_api"
 	_ "github.com/alist-org/alist/v3/drivers/kodbox"
 	_ "github.com/alist-org/alist/v3/drivers/lanzou"
