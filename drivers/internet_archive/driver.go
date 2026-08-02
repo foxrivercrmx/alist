@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/alist-org/alist/v3/internal/driver"
 	"github.com/alist-org/alist/v3/internal/model"
-	"github.com/alist-org/alist/v3/pkg/utils"
 )
 
 // Driver configuration structure
@@ -29,9 +29,9 @@ func (d *InternetArchive) Config() driver.Config {
 		Name:        "InternetArchive",
 		LocalSort:   true,
 		OnlyLocal:   false,
-		OnlyProxy:   false, // Explicitly allow 302 redirects
+		OnlyProxy:   false, // Mengizinkan 302 redirect
 		NoCache:     false,
-		NoUpload:    true,  // Read-only driver
+		NoUpload:    true,  // Read-only
 		NeedMs:      false,
 		DefaultRoot: "/",
 	}
@@ -42,7 +42,6 @@ func (d *InternetArchive) GetAddition() driver.Additional {
 }
 
 func (d *InternetArchive) Init(ctx context.Context) error {
-	// Optional: Validate that the identifier exists during initialization
 	if d.Identifier == "" {
 		return fmt.Errorf("identifier cannot be empty")
 	}
@@ -53,18 +52,18 @@ func (d *InternetArchive) Drop(ctx context.Context) error {
 	return nil
 }
 
-// Structure to parse IA Metadata API response
+// Struktur metadata Internet Archive
 type IAMetadata struct {
 	Files []struct {
-		Name  string `json:"name"`
-		Size  string `json:"size"`
-		Mtime string `json:"mtime"`
+		Name   string `json:"name"`
+		Size   string `json:"size"`
+		Mtime  string `json:"mtime"`
 		Format string `json:"format"`
 	} `json:"files"`
 }
 
-func (d *InternetArchive) List(ctx context.Context, dir model.Path, args model.ListArgs) ([]model.Obj, error) {
-	// IA's metadata API endpoint
+// List fungsi untuk mengambil dan menstruktur file dari API Internet Archive
+func (d *InternetArchive) List(ctx context.Context, dir model.Obj, args model.ListArgs) ([]model.Obj, error) {
 	apiURL := fmt.Sprintf("https://archive.org/metadata/%s/files", d.Identifier)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
@@ -89,51 +88,57 @@ func (d *InternetArchive) List(ctx context.Context, dir model.Path, args model.L
 	}
 
 	var files []model.Obj
-	dirPath := dir.Path()
-	if dirPath == "/" {
+	dirPath := dir.GetPath()
+	
+	// Normalisasi dirPath untuk logika prefix IA
+	if dirPath == "/" || dirPath == "" {
 		dirPath = ""
 	} else {
-		// Strip leading slash for prefix matching
 		dirPath = strings.TrimPrefix(dirPath, "/") + "/"
 	}
 
-	// Used to track directories we've already added in this listing
 	addedDirs := make(map[string]bool)
 
 	for _, f := range metadata.Files {
-		// Ignore hidden files or metadata files IA creates automatically
+		// Abaikan file metadata dan hidden files
 		if strings.HasPrefix(f.Name, ".") || f.Format == "Metadata" {
 			continue
 		}
 
-		// Filter files by the requested directory
 		if dirPath != "" && !strings.HasPrefix(f.Name, dirPath) {
 			continue
 		}
 
-		// Calculate relative path within the requested directory
 		relPath := strings.TrimPrefix(f.Name, dirPath)
 
-		// Check if the current item is a file or a sub-directory
 		if strings.Contains(relPath, "/") {
-			// It's a directory
+			// Jika ada sisa slash, berarti ini adalah direktori/folder
 			dirName := strings.Split(relPath, "/")[0]
 			if !addedDirs[dirName] {
 				files = append(files, &model.Object{
 					Name:     dirName,
 					Size:     0,
-					Modified: time.Now(), // Directories don't have mtime in IA flat structure
+					Modified: time.Now(),
 					IsFolder: true,
 				})
 				addedDirs[dirName] = true
 			}
 		} else {
-			// It's a file
-			size, _ := utils.ToInt64(f.Size)
-			
-			// Parse modification time (Unix timestamp as string)
-			mtimeInt, _ := utils.ToInt64(f.Mtime)
-			mtime := time.Unix(mtimeInt, 0)
+			// Ini adalah file
+			// Parse string size ke int64
+			size, err := strconv.ParseInt(f.Size, 10, 64)
+			if err != nil {
+				size = 0
+			}
+
+			// Parse string mtime ke int64 lalu ke time.Time
+			mtimeInt, err := strconv.ParseInt(f.Mtime, 10, 64)
+			var mtime time.Time
+			if err == nil {
+				mtime = time.Unix(mtimeInt, 0)
+			} else {
+				mtime = time.Now()
+			}
 
 			files = append(files, &model.Object{
 				Name:     relPath,
@@ -147,18 +152,17 @@ func (d *InternetArchive) List(ctx context.Context, dir model.Path, args model.L
 	return files, nil
 }
 
+// Link fungsi vital untuk melakukan 302 Redirect
 func (d *InternetArchive) Link(ctx context.Context, file model.Obj, args model.LinkArgs) (*model.Link, error) {
-	// This is the core magic for 302 Redirects.
-	// We construct the direct archive.org download URL.
-	// Format: https://archive.org/download/<Identifier>/<Filename>
-	
-	// AList handles URL encoding internally, but IA requires spaces to be %20
-	filePath := path.Join(args.ReqPath)
-	
-	// Ensure no leading slash in the file path appended to the IA URL
+	// Menggunakan GetPath() dari object file dan membuang slash di awal agar URL IA valid
+	filePath := file.GetPath()
 	filePath = strings.TrimPrefix(filePath, "/")
+	
+	// Karena IA memerlukan URL Path, kita gunakan path.Join untuk memastikan format aman
+	// IA tidak perlu encoding karakter aneh-aneh selama kita menyusun path-nya dengan benar.
+	cleanPath := path.Clean(filePath)
 
-	url := fmt.Sprintf("https://archive.org/download/%s/%s", d.Identifier, filePath)
+	url := fmt.Sprintf("https://archive.org/download/%s/%s", d.Identifier, cleanPath)
 
 	return &model.Link{
 		URL: url,
