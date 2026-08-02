@@ -39,14 +39,14 @@ func (d *InternetArchive) Drop(ctx context.Context) error {
 	return nil
 }
 
-// Struktur metadata Internet Archive
+// Struktur metadata Internet Archive yang sudah disesuaikan dengan key "result"
 type IAMetadata struct {
-	Files []struct {
+	Result []struct {
 		Name   string `json:"name"`
 		Size   string `json:"size"`
 		Mtime  string `json:"mtime"`
 		Format string `json:"format"`
-	} `json:"files"`
+	} `json:"result"`
 }
 
 func (d *InternetArchive) List(ctx context.Context, dir model.Obj, args model.ListArgs) ([]model.Obj, error) {
@@ -69,7 +69,8 @@ func (d *InternetArchive) List(ctx context.Context, dir model.Obj, args model.Li
 	}
 
 	var metadata IAMetadata
-	if err := json.NewDecoder(res.Body).Decode(&metadata.Files); err != nil {
+	// Decode langsung ke struct metadata, bukan ke slice-nya
+	if err := json.NewDecoder(res.Body).Decode(&metadata); err != nil {
 		return nil, err
 	}
 
@@ -83,7 +84,8 @@ func (d *InternetArchive) List(ctx context.Context, dir model.Obj, args model.Li
 
 	addedDirs := make(map[string]bool)
 
-	for _, f := range metadata.Files {
+	// Looping menggunakan metadata.Result
+	for _, f := range metadata.Result {
 		if strings.HasPrefix(f.Name, ".") || f.Format == "Metadata" {
 			continue
 		}
