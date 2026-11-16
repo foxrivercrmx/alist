@@ -35,6 +35,13 @@ func (d *InternetArchive) Init(ctx context.Context) error {
 	if d.Identifier == "" {
 		return fmt.Errorf("identifier is required")
 	}
+	// root_folder_path must not be empty. If it is empty, the framework
+	// (internal/op/fs.go) cannot set the Path on child objects returned by
+	// List(), so every sub-folder is treated as the root and the listing
+	// loops back to the root directory.
+	if strings.TrimSpace(d.RootFolderPath) == "" {
+		d.RootFolderPath = "/"
+	}
 	return nil
 }
 
